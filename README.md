@@ -16,7 +16,7 @@ Juniper EX2200-C-12T-2G 交换机的配置仓库，含配套 Debian 路由器设
 | `in-progress/ipv6-plan.txt` | IPv6 ULA 地址规划 |
 | `in-progress/ipv6-deploy.txt` | IPv6 交换机 + 路由器双端部署步骤 |
 | `in-progress/juniper-h3c-note.txt` | Juniper / H3C 命令对照备忘 |
-| `in-progress/log` / `log2` / `log3` | 串口启动日志（故障排查记录） |
+| `in-progress/log` / `log2` / `log3` | 串口启动日志（交换机启动故障排查记录） |
 | `AGENTS.md` | 给 OpenCode 的指令文件 |
 
 ## 执行顺序
