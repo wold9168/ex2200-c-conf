@@ -102,6 +102,70 @@
     不读 `/etc/sysctl.conf`。必须将参数写在 `sysctl.d/` 下。）
 5. 重启网络：`sudo systemctl restart networking`
 
+### 路由器配置：PPPoE 拨号（仅 ISP 需要时）
+
+若新 ISP 要求 PPPoE 拨号（国内光纤宽带常见），需替换 enp0s31f6.9 的 DHCP
+方案为 ppp 拨号。
+
+**安装：**
+```bash
+sudo apt install -y pppoe ppp
+```
+
+**配置 `/etc/network/interfaces`：**
+将原 enp0s31f6.9 的 DHCP 段替换为：
+
+```
+auto enp0s31f6.9
+iface enp0s31f6.9 inet manual
+    vlan-raw-device enp0s31f6
+    pre-up ip link set enp0s31f6.9 up
+
+auto dsl-provider
+iface dsl-provider inet ppp
+    provider dsl-provider
+    pre-up ip link set enp0s31f6.9 up
+```
+
+**配置 PPP 凭据（`/etc/ppp/chap-secrets` 或 `pap-secrets`）：**
+
+```
+# 格式：用户名   provider   密码    IP
+"your-username" dsl-provider "your-password" *
+```
+
+**配置 `/etc/ppp/peers/dsl-provider`：**
+
+```
+plugin rp-pppoe.so
+enp0s31f6.9
+user "your-username"
+password "your-password"
+noauth
+persist
+maxfail 0
+mtu 1492
+mru 1492
+holdoff 10
+```
+
+**开机自动拨号：** 以上配置中 `auto dsl-provider` 已确保系统启动时
+自动拉起 ppp 连接。手动操作：
+
+```bash
+sudo pon dsl-provider      # 拨号
+sudo poff dsl-provider     # 断线
+sudo plog                  # 查看日志
+```
+
+**注意事项：**
+- 拨号成功后 WAN 接口从 `enp0s31f6.9` 变为 `ppp0`
+- iptables / nftables 中引用 `oifname "enp0s31f6.9"` 的 MASQUERADE 规则
+  须改为 `oifname "ppp0"`
+- NAT66 的 nftables 规则同理
+- IPv6 默认路由的 `fe80::1` 需改为 PPPoE 连接后的新网关地址
+- 多数国内 ISP 的 PPPoE 不分配公网 IPv6，NAT66 可能不可用
+
 ### 验证
 
 1. 路由器 ping 通交换机：`ping 192.168.10.1`
