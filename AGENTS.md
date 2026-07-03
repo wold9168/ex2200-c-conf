@@ -11,7 +11,7 @@
 
 ```
 VLAN 9  (upstream)  ← ge-0/1/0/1  ← ISP (untagged, access)
-VLAN 10 (routing)   ← ge-0/0/0 trunk (tagged 9 10 12) ← Debian 路由器
+VLAN 10 (routing)   ← ge-0/0/0 trunk (tagged 9 10) ← Debian 路由器
 VLAN 11 (management) ← 暂空
 VLAN 12 (personal)  ← ge-0/0/1-11 ← 个人设备
 VLAN 13 (vm)        ← 暂空
@@ -21,9 +21,10 @@ VLAN 13 (vm)        ← 暂空
 
 | 文件 | 说明 |
 |---|---|
-| `README.md` | 本仓库文件说明与执行顺序 |
+| `README.md` | 仓库说明、执行顺序与 DHCPv6 配置详解 |
 | `configured.conf` | **交换机当前目标配置**（完整 Junos 配置块格式） |
 | `debian-router-config.txt` | Debian 路由器当前配置（interfaces、sysctl、服务等） |
+| `migration-guide.md` | 网络迁移指南（含 PPPoE 拨号配置章节） |
 | `in-progress/infact.conf` | 交换机迁移前运行配置（`show configuration` 输出） |
 | `in-progress/apply-commands.txt` | 交换机 set 命令分步清单（须提交 2 次，me0 会断会话） |
 | `in-progress/network-design.txt` | 完整网络拓扑、VLAN 规划、端口映射、路由走向 |
@@ -60,7 +61,9 @@ VLAN 13 (vm)        ← 暂空
 - EX2200 Junos 12.3 的 VLAN L3 接口名是 `vlan.xx`**不是** `irb.xx`
 - `configured.conf` 须用 `load merge` 提交（密码 hash 在文件内，`load override` 会丢失未列出的配置）
 - Debian 路由器单个网口 `enp0s31f6`，VLAN 子接口通过 trunk 与交换机通信
-- VLAN 12 的 DHCP 暂由交换机负责；VLAN 10 无 DHCP，路由器用静态 IP `192.168.10.2/24`
+- 交换机 trunk ge-0/0/0 仅带 VLAN 9 + 10；VLAN 12 的 IPv6 通过 DHCPv6 relay 解决，不进 trunk
+- VLAN 12 的 DHCP（IPv4）由交换机负责；DHCPv6 由路由器 relay 上的 wide-dhcpv6-server 负责
+- VLAN 10 无 DHCP，路由器用静态 IP `192.168.10.2/24`
 - ⚠️ **Debian 13 sysctl 坑**：`systemd-sysctl` 只读 `/etc/sysctl.d/*.conf`，不读 `/etc/sysctl.conf`。
   持久化内核参数必须写到 `/etc/sysctl.d/` 下，否则重启后丢失。
 
