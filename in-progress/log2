@@ -1,0 +1,198 @@
+syncing disks... All buffers synced.
+Uptime: 5m19s
+Rebooting...
+
+
+U-Boot 1.1.6 (Apr  4 2013 - 10:33:10)  
+
+Board: EX2200-C-12T-2G 4.9
+EPLD:  Version 14 (0x02)
+DRAM:  Initializing (512MB)
+Flash: 8 MB
+
+Firmware Version:01.00.00 
+USB:   scanning bus for devices... 3 USB Device(s) found
+       scanning bus for storage devices... 1 Storage Device(s) found
+
+ELF file is 32 bit
+Consoles: U-Boot console  
+
+FreeBSD/arm U-Boot loader, Revision 1.1
+(builder@svl-junos-pool91.juniper.net, Tue Apr  5 00:15:22 UTC 2011)
+Memory: 512MB
+bootsequencing is enabled
+bootsuccess is set
+new boot device = disk0s1:
+Loading /boot/defaults/loader.conf 
+/kernel data=0x883da0+0xddd74 syms=[0x4+0xf0960+0x4+0xc7fb2]
+
+
+Hit [Enter] to boot immediately, or space bar for command prompt.
+Booting [/kernel]...               
+Kernel entry at 0x1400100 ...
+GDB: debug ports: uart
+GDB: current port: uart
+KDB: debugger backends: ddb gdb
+KDB: current backend: ddb
+Copyright (c) 1996-2014, Juniper Networks, Inc.
+All rights reserved.
+Copyright (c) 1992-2006 The FreeBSD Project.
+Copyright (c) 1979, 1980, 1983, 1986, 1988, 1989, 1991, 1992, 1993, 1994
+        The Regents of the University of California. All rights reserved.
+JUNOS 12.3R6.6 #0: 2014-03-13 06:57:48 UTC
+    builder@tiabeth.juniper.net:/volume/build/junos/12.3/release/12.3R6.6/obj-arm/junos/bsd/kernels/JUNIPER-EX-2200/kerl
+can't re-use a leaf (all_slot_serialid)!
+CPU: Feroceon 88FR131 rev 1 (Marvell core)
+cpu53: Feroceon 88FR131 revision   WB enabled EABT branch prediction enabled
+  16KB/32B 4-way Instruction cache
+  16KB/32B 4-way write-back-locking-C Data cache
+real memory  = 536870912 (512 MB)
+avail memory = 503222272 (479 MB)
+SOC: Marvell 88F6281 rev A0, TClock 200MHz
+Security policy loaded: Junos MAC/veriexec (mac_veriexec)
+MAC/veriexec fingerprint module loaded: SHA256
+MAC/veriexec fingerprint module loaded: SHA1
+ETHERNET SOCKET BRIDGE initialising
+Initializing EXSERIES properties ...
+mbus0: <Marvell Internal Bus (Mbus)> on motherboard
+ic0: <Marvell Integrated Interrupt Controller> at mem 0xf1020200-0xf102023b on mbus0
+timer0: <Marvell CPU Timer> at mem 0xf1020300-0xf102032f irq 1 on mbus0
+gpio0: <Marvell Integrated GPIO Controller> at mem 0xf1010100-0xf101011f irq 35,36,37,38,39,40,41 on mbus0
+uart0: <16550 or compatible> at mem 0xf1012000-0xf101201f irq 33 on mbus0
+uart0: console (9600,n,8,1)
+uart1: <16550 or compatible> at mem 0xf1012100-0xf101211f irq 34 on mbus0
+ehci0: <88F5XXX Integrated USB 2.0 controller> at mem 0xf1050000-0xf1050fff irq 48,19 on mbus0
+usb0: EHCI version 1.0
+usb0 on ehci0
+usb0: USB revision 2.0
+uhub0: Marvell EHCI root hub, class 9/0, rev 2.00/1.00, addr 1
+uhub0: 1 port with 1 removable, self powered
+uhub1: vendor 0x04b4 product 0x6560, class 9/0, rev 2.00/90.15, addr 2
+uhub1: single transaction translator
+uhub1: 2 ports with 2 removable, self powered
+umass0: STMicroelectronics ST72682  High Speed Mode, rev 2.00/2.10, addr 3
+mge0: <Marvell Gigabit Ethernet controller> at mem 0xf1072000-0xf1073fff irq 12,13,14,11,46 on mbus0
+mge0: hardware MAC address 64:64:9b:a9:3c:bf
+miibus0: <MII bus> on mge0
+e1000phy0: <Marvell 88E1118 Gigabit PHY> on miibus0
+e1000phy0:  10baseT, 10baseT-FDX, 100baseTX, 100baseTX-FDX, 1000baseTX-FDX, auto
+i2c0: <Marvell I2C ARM OnChip Controller> at mem 0xf1011000-0xf101101f irq 29 on mbus0
+syspld0: <SYSPLD> on i2c0
+poe0: <POE> on i2c0
+poe_attach: re-types method failed
+device_attach: poe0 attach returned 19
+cfi0: <SPI flash - 8MB> at mem 0xf1010600-0xf101062f,0xf8000000-0xf87fffff irq 23 on mbus0
+mpfe0: <Juniper EX-series Packet Forwarding Engine> at mem 0xf4000000-0xf7ffffff irq 113 on mbus0
+pcib0: <Marvell 88F6281 PCI-Express host controller> at mem 0xf1040000-0xf1041fff,0xe8000000-0xefffffff irq 9 on mbus0
+pci0: <PCI bus> on pcib0
+Initializing product: 107 ..
+bmeb: bmeb_lib_init done 0xc3386800, addr 0xc1d5bac0
+bme0:Virtual BME driver initializing
+Timecounter "CPU Timer" frequency 200000000 Hz quality 1000
+###PCB Group initialized for udppcbgroup
+###PCB Group initialized for tcppcbgroup
+da0 at umass-sim0 bus 0 target 0 lun 0
+da0: <ST ST72682 2.10> Removable Direct Access SCSI-2 device 
+da0: 40.000MB/s transfers
+da0: 1000MB (2048000 512 byte sectors: 64H 32S/T 1000C)
+Kernel thread "wkupdaemon" (pid 42) exited prematurely.
+Trying to mount root from ufs:/dev/da0s1a
+Attaching /packages/jbase via /dev/mdctl...
+Mounted jbase package on /dev/md0...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jboot signed by PackageProduction_12_3_0
+Verified jbase-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted fips-mode-arm package on /dev/md1...
+Verified manifest signed by PackageProduction_12_3_0
+Verified fips-mode-arm-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jcrypto-ex package on /dev/md2...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jcrypto-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jdocs-ex package on /dev/md3...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jdocs-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jkernel-ex-2200 package on /dev/md4...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jkernel-ex-2200-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jpfe-ex22x package on /dev/md5...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jpfe-ex22x-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jroute-ex package on /dev/md6...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jroute-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jswitch-ex package on /dev/md7...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jswitch-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Mounted jweb-ex package on /dev/md8...
+Verified manifest signed by PackageProduction_12_3_0
+Verified jweb-ex-12.3R6.6 signed by PackageProduction_12_3_0
+Executing /packages/mnt/jweb-ex-12.3R6.6/mount.post..
+Automatic reboot in progress...
+Media check on da0 on ex platforms
+** /dev/da0s1a
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 36650 free (10 frags, 4580 blocks, 0.0% fragmentation)
+** /dev/da0s3e
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 50101 free (301 frags, 6225 blocks, 0.5% fragmentation)
+Computing slice and partition sizes for /dev/da0 ...
+savecore: could not be determined
+No dump exists
+** /dev/da0s3d
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 188824 free (32 frags, 23599 blocks, 0.0% fragmentation)
+** /dev/da0s4d
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 31617 free (41 frags, 3947 blocks, 0.1% fragmentation)
+rm: /var/etc/pam.conf: Operation not permitted
+Creating initial configuration...mgd: Running FIPS Self-tests
+veriexec: no fingerprint for file='/sbin/kats/cannot-exec' fsid=68 fileid=51404 uid=0 pid=453
+mgd: FIPS Self-tests Passed
+mgd: error: rename failed for /var/etc/pam.conf
+mgd: commit complete
+Setting initial options:  debugger_on_panic=NO debugger_on_break=NO.
+Starting optional daemons: .
+Doing initial network setup:.
+Initial interface configuration:
+additional daemons:.
+Additional routing options:kern.module_path: /boot//kernel;/boot/modules -> /boot/modules;/modules/peertype;/modules/if;
+kld netpfe drv: ifpfed_eth ifpfed_ml_cmnkld platform: ex_ifpfeLoading the EX-series platform NETPFE module
+ if_vcpkld peertype: peertype_hcm peertype_pfem peertype_sfi peertype_slavere grat_arp_on_ifup=YES: net.link.ether.inet1
+ ipsec kld.
+Doing additional network setup:.
+Starting final network daemons:.
+setting ldconfig path: /usr/lib /opt/lib
+starting standard daemons: cron.
+Local package initialization:.
+Initialize /var subdirs
+starting local daemons:set cores for group access
+.
+Thu Feb 12 16:09:51 UTC 2015
+Boot media /dev/da0 has dual root support
+WARNING: JUNOS versions running on dual partitions are not same
+** /dev/da0s2a
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 37030 free (22 frags, 4626 blocks, 0.0% fragmentation)
+FILE SYSTEM CLEAN; SKIPPING CHECKS
+clean, 37030 free (22 frags, 4626 blocks, 0.0% fragmentation)
+
+tough-ex2200-c (ttyu0)
+
+--- JUNOS 12.3R6.6 built 2014-03-13 06:57:48 UTC
+
+***********************************************************************
+**                                                                   **
+**  WARNING: THIS DEVICE HAS BOOTED FROM THE BACKUP JUNOS IMAGE      **
+**                                                                   **
+**  It is possible that the primary copy of JUNOS failed to boot up  **
+**  properly, and so this device has booted from the backup copy.    **
+**                                                                   **
+**  Please re-install JUNOS to recover the primary copy in case      **
+**  it has been corrupted and if auto-snapshot feature is not        **
+**  enabled.                                                         **
+**                                                                   **
+***********************************************************************
+
+tset: termcap: No such file or directory
+csh: Cannot open /etc/termcap.
+csh: using dumb terminal settings.

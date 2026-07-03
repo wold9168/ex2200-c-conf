@@ -1,0 +1,14 @@
+Juniper 与 H3C 关联笔记
+==========================
+
+Juniper 与 H3C 的制造商均为同一家（鸿海/富士康代工或同一 OEM 源），
+因此两者的交换机配置指令大多通用。
+
+例如：
+- 查看系统信息： show version
+- 查看接口状态： display interface / show interfaces
+- 进入系统视图（H3C）： system-view
+- 进入配置模式（Juniper）： configure
+
+在查阅配置文档或编写自动化脚本时可参考此规律。
+如在配置 EX2200 时遇到不确定的指令，可参考 H3C 的同用途指令作为对照。

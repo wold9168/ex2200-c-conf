@@ -1,0 +1,329 @@
+=================================================
+IPv6 部署方案（修订版）— DHCPv6 relay + SLAAC
+=================================================
+
+之前方案要求 trunk 加 VLAN 12 + 路由器建 enp0s31f6.12。
+新方案改用交换机 DHCPv6 relay，不需要改 trunk。
+
+架构：
+  交换机负责 RA + DHCPv6 relay，路由器负责 DHCPv6 server + NAT66。
+  客户端：地址从 SLAAC 获取，DNS 从 DHCPv6 获取。
+
+前提：无（所有步骤按顺序执行即可）。
+
+
+=================================================
+第 1 步：交换机 — vlan 接口加 IPv6 + 默认路由
+=================================================
+
+SSH 进交换机执行：
+
+configure
+
+# 给每个 vlan 接口加 IPv6 ULA 地址
+set interfaces vlan unit 10 family inet6 address fd00:10::1/64
+set interfaces vlan unit 11 family inet6 address fd00:11::1/64
+set interfaces vlan unit 12 family inet6 address fd00:12::1/64
+set interfaces vlan unit 13 family inet6 address fd00:13::1/64
+
+# 给 me0 管理口也加一个
+set interfaces me0 unit 0 family inet6 address fd00:11::2/64
+
+# 默认路由：所有 IPv6 外网流量走路由器
+set routing-options rib inet6.0 static route ::/0 next-hop fd00:10::2
+
+commit
+
+
+=================================================
+第 2 步：交换机 — RA + DHCPv6 relay
+=================================================
+
+交换机发 RA（含 O flag，告知客户端从 DHCPv6 获取其他配置如 DNS），
+同时将 VLAN 12 的 DHCPv6 请求 relay 到路由器。
+
+SSH 进交换机执行：
+
+configure
+
+# RA on VLAN 12 — O flag + SLAAC prefix
+set protocols router-advertisement interface vlan.12 prefix fd00:12::/64
+set protocols router-advertisement interface vlan.12 other-stateful-configuration
+
+# RA on VLAN 10（可选，让 VLAN 10 设备也用 SLAAC）
+# set protocols router-advertisement interface vlan.10 prefix fd00:10::/64
+# set protocols router-advertisement interface vlan.10 other-stateful-configuration
+
+# DHCPv6 relay：VLAN 12 → 路由器（fd00:10::2）
+set forwarding-options dhcp-relay dhcpv6 server-group ROUTER fd00:10::2
+set forwarding-options dhcp-relay dhcpv6 active-server-group ROUTER
+set forwarding-options dhcp-relay dhcpv6 group VLAN12 interface vlan.12
+
+# DHCPv6 relay：VLAN 13（如有需要）
+# set forwarding-options dhcp-relay dhcpv6 group VLAN13 interface vlan.13
+
+commit
+
+--------------------------------------------------
+验证
+--------------------------------------------------
+
+> show configuration protocols router-advertisement
+interface vlan.12 {
+    prefix fd00:12::/64;
+    other-stateful-configuration;
+}
+
+> show configuration forwarding-options dhcp-relay dhcpv6
+server-group ROUTER {
+    fd00:10::2;
+}
+active-server-group ROUTER;
+group VLAN12 {
+    interface vlan.12;
+}
+
+
+=================================================
+第 3 步：路由器 — 给 enp0s31f6.10 配 IPv6 地址
+=================================================
+
+交换机的 IPv6 默认路由（`::/0 → fd00:10::2`）以路由器的
+`enp0s31f6.10` 为下一跳，所以必须先给它配好 IPv6 地址。
+
+另外，DHCPv6 relay 和 DHCPv6 服务器也需要这个地址才能通信。
+
+临时生效：
+
+  sudo ip addr add fd00:10::2/64 dev enp0s31f6.10
+
+永久生效：在 `/etc/network/interfaces` 的 `enp0s31f6.10` 段
+`vlan-raw-device` 行后追加：
+
+```
+    # IPv6 ULA 地址
+    up ip -6 addr add fd00:10::2/64 dev enp0s31f6.10 || true
+```
+
+修改后的完整段参考：
+
+```
+auto enp0s31f6.10
+iface enp0s31f6.10 inet static
+    address 192.168.10.2/24
+    vlan-raw-device enp0s31f6
+    # IPv6 ULA 地址
+    up ip -6 addr add fd00:10::2/64 dev enp0s31f6.10 || true
+    # IPv6 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip -6 route add fd00:11::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:12::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:13::/64 via fd00:10::1 || true
+    # IPv4 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip route add 192.168.11.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.12.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.13.0/24 via 192.168.10.1 || true
+```
+
+验证：
+
+  ip -6 addr show enp0s31f6.10
+  # 应看到 fd00:10::2/64
+
+
+=================================================
+第 4 步：路由器 — IPv6 默认路由 + 回程路由
+=================================================
+
+路由器需要两条 IPv6 路由：
+  1. 默认路由走 enp0s31f6.9（经 ISP 网关 fe80::1 出公网）
+  2. VLAN 11/12/13 的 ULA 回程路由走 enp0s31f6.10（经交换机 fd00:10::1）
+
+临时生效：
+
+  sudo ip -6 route add default via fe80::1 dev enp0s31f6.9
+  sudo ip -6 route add fd00:11::/64 via fd00:10::1
+  sudo ip -6 route add fd00:12::/64 via fd00:10::1
+  sudo ip -6 route add fd00:13::/64 via fd00:10::1
+
+验证：
+
+  ip -6 route show
+  # 应有 default via fe80::1 dev enp0s31f6.9
+  # 应有 fd00:11/12/13::/64 via fd00:10::1
+
+永久生效：追加到 `/etc/network/interfaces` 对应段。
+
+enp0s31f6.9 段（vlan-raw-device 行后）：
+
+```
+    # IPv6 默认路由经 ISP 网关
+    up ip -6 route add default via fe80::1 dev enp0s31f6.9 || true
+```
+
+enp0s31f6.10 段（已有 IPv4 回程路由旁）：
+
+```
+    up ip -6 route add fd00:11::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:12::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:13::/64 via fd00:10::1 || true
+```
+
+修改后的 enp0s31f6.10 完整段参考：
+
+```
+auto enp0s31f6.10
+iface enp0s31f6.10 inet static
+    address 192.168.10.2/24
+    vlan-raw-device enp0s31f6
+    # IPv6 ULA 地址
+    up ip -6 addr add fd00:10::2/64 dev enp0s31f6.10 || true
+    # IPv6 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip -6 route add fd00:11::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:12::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:13::/64 via fd00:10::1 || true
+    # IPv4 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip route add 192.168.11.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.12.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.13.0/24 via 192.168.10.1 || true
+```
+
+
+=================================================
+第 5 步：路由器 — 安装 DHCPv6 服务器
+=================================================
+
+安装 wide-dhcpv6-server（专为 DHCPv6 设计，配置简单）：
+
+  sudo apt install -y wide-dhcpv6-server
+配置页要求填入「Interfaces on which the DHCPv6 server listens to requests:」，填入 enp0s31f6.10
+
+配置 /etc/wide-dhcpv6/dhcp6s.conf：
+
+cat << 'EOF' | sudo tee /etc/wide-dhcpv6/dhcp6s.conf
+
+# 默认 DNS（路由器 ULA + Google Public DNS）
+option domain-name-servers fd00:10::2, 2001:4860:4860::8888;
+option domain-name "home.lan";
+
+# VLAN 12 — relay 过来的请求，interface-id 匹配 "vlan.12"
+interface vlan.12 {
+    # stateless：不指定 address-pool，只提供 DNS 等选项
+};
+
+# VLAN 10 — 直接到达，物理接口名 enp0s31f6.10
+interface enp0s31f6.10 {
+    # stateless：不指定 address-pool，只提供 DNS 等选项
+};
+EOF
+
+启动服务：
+
+  sudo systemctl enable wide-dhcpv6-server
+  sudo systemctl start wide-dhcpv6-server
+
+# 注意：wide-dhcpv6-server 默认监听所有接口。
+# relay 过来的请求以物理接口 enp0s31f6.10 到达，
+# interface-id 为 vlan.12（交换机 relay agent 附加）。
+# VLAN 10 的直接请求以物理接口 enp0s31f6.10 到达，无 interface-id。
+
+
+=================================================
+第 6 步：路由器 — 启用 IPv6 转发
+=================================================
+
+  sudo sysctl -w net.ipv6.conf.all.forwarding=1
+
+  # 持久化：⚠️ Debian 13 的 systemd-sysctl 只读 /etc/sysctl.d/*.conf，不读 /etc/sysctl.conf
+  # 必须写在 /etc/sysctl.d/ 下
+  echo 'net.ipv6.conf.all.forwarding=1' | sudo tee -a /etc/sysctl.d/99-ipforward.conf
+
+
+=================================================
+第 7 步：路由器 — radvd（只给 VLAN 10 发 RA）
+=================================================
+
+VLAN 12 的 RA 由交换机负责（见第 2 步）。VLAN 10 是交换机和路由器间的
+ transit 网段（无终端设备），但 radvd 仍配置在此接口上作为兜底。
+
+安装 radvd：
+
+  sudo apt install -y radvd
+
+cat << 'EOF' | sudo tee /etc/radvd.conf
+
+interface enp0s31f6.10 {
+    AdvSendAdvert on;
+    prefix fd00:10::/64 {
+        AdvOnLink on;
+        AdvAutonomous on;
+    };
+    RDNSS fd00:10::2 {};
+    AdvOtherConfigFlag on;
+};
+EOF
+
+  sudo systemctl enable radvd
+  sudo systemctl start radvd
+
+
+=================================================
+第 8 步：路由器 — NAT66
+=================================================
+
+cat << 'EOF' | sudo tee /etc/nftables-ipv6.conf
+table ip6 nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "enp0s31f6.9" masquerade;
+    }
+}
+EOF
+
+sudo nft -f /etc/nftables-ipv6.conf
+
+# 持久化（已有 rc.local 则追加）
+if [ ! -f /etc/rc.local ]; then
+    echo '#!/bin/sh' | sudo tee /etc/rc.local
+    sudo chmod +x /etc/rc.local
+fi
+echo 'nft -f /etc/nftables-ipv6.conf' | sudo tee -a /etc/rc.local
+
+
+=================================================
+第 9 步：验证
+=================================================
+
+# 交换机
+> show ipv6 route
+  应看到 ::/0 → fd00:10::2
+
+> show forwarding-options dhcp-relay dhcpv6 statistics
+  应看到 relay 有统计数据
+
+# 路由器
+ip -6 addr show enp0s31f6.10     # fd00:10::2/64
+sudo systemctl status radvd      # active
+sudo systemctl status wide-dhcpv6-server  # active
+
+# 客户端（连在 VLAN 12 上）
+ip -6 addr show
+  应看到 fd00:12::/64 的 SLAAC 地址
+
+ping6 fd00:12::1                  # 通交换机
+ping6 fd00:10::2                  # 通路由器
+ping6 2001:4860:4860::8888        # 通外网
+
+
+=================================================
+附录 A：SLAAC-only 简化方案（不跑 DHCPv6）
+=================================================
+
+如果不想跑 DHCPv6 服务器，可以去掉 relay 和相关配置，
+只依靠 SLAAC 获取地址 + IPv4 DHCP 提供的 DNS。
+
+交换机只需：
+  set protocols router-advertisement interface vlan.12 prefix fd00:12::/64
+
+路由器只需多跳 NAT66，不需要 wide-dhcpv6-server 和 radvd。
+
+VLAN 12 设备虽拿不到 IPv6 DNS，但通常回退到 IPv4 DNS 解析域名。

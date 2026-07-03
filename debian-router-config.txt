@@ -1,0 +1,83 @@
+=================================================
+Debian 路由器当前配置（2025-07-03 现场采集）
+=================================================
+
+/etc/network/interfaces
+=================================================
+
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+allow-hotplug enp0s31f6
+iface enp0s31f6 inet dhcp
+# This is an autoconfigured IPv6 interface
+iface enp0s31f6 inet6 auto
+
+# VLAN 9 — 上行接 ISP（DHCP 获取 IP 和默认路由）
+auto enp0s31f6.9
+iface enp0s31f6.9 inet dhcp
+    vlan-raw-device enp0s31f6
+    # IPv6 默认路由经 ISP 网关
+    up ip -6 route add default via fe80::1 dev enp0s31f6.9 || true
+
+# VLAN 10 — LAN 侧接交换机 trunk
+auto enp0s31f6.10
+iface enp0s31f6.10 inet static
+    address 192.168.10.2/24
+    vlan-raw-device enp0s31f6
+    # IPv6 ULA 地址
+    up ip -6 addr add fd00:10::2/64 dev enp0s31f6.10 || true
+    # IPv6 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip -6 route add fd00:11::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:12::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:13::/64 via fd00:10::1 || true
+    # IPv4 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip route add 192.168.11.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.12.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.13.0/24 via 192.168.10.1 || true
+
+
+/etc/sysctl.d/99-ipforward.conf（⚠️ Debian 13 不读 /etc/sysctl.conf，须放 sysctl.d/ 下）
+==================================================
+
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+
+
+/etc/radvd.conf
+=================================================
+
+interface enp0s31f6.10 {
+    AdvSendAdvert on;
+    prefix fd00:10::/64 {
+        AdvOnLink on;
+        AdvAutonomous on;
+    };
+    RDNSS fd00:10::2 {};
+    AdvOtherConfigFlag on;
+};
+
+
+/etc/wide-dhcpv6/dhcp6s.conf
+=================================================
+
+# 默认 DNS（路由器 ULA + Google Public DNS）
+option domain-name-servers fd00:10::2, 2001:4860:4860::8888;
+option domain-name "home.lan";
+
+# VLAN 12 — relay 过来的请求，interface-id 匹配 "vlan.12"
+interface vlan.12 {
+    # stateless：不指定 address-pool，只提供 DNS 等选项
+};
+
+# VLAN 10 — 直接到达，物理接口名 enp0s31f6.10
+interface enp0s31f6.10 {
+    # stateless：不指定 address-pool，只提供 DNS 等选项
+};

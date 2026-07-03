@@ -1,0 +1,141 @@
+=================================================
+Debian 13 路由器配置 — 单网口 + VLAN 子接口
+=================================================
+
+硬件接口：enp0s31f6
+当前状态：连接在硬路由上（调试网络 192.168.1.x）
+目标状态：配置全部就绪后，网线插到交换机 ge-0/0/0 即可上线
+
+DHCP 仍由三层交换机负责，路由器只做路由转发 + NAT。
+
+
+=================================================
+一、安装依赖
+=================================================
+
+# isc-dhcp-server 不需要了，DHCP 由交换机负责
+sudo apt update
+sudo apt install -y vlan iptables-persistent isc-dhcp-client
+
+# 加载 802.1Q 内核模块
+sudo modprobe 8021q
+echo '8021q' | sudo tee -a /etc/modules
+
+
+=================================================
+二、创建 VLAN 子接口
+=================================================
+
+# VLAN 9 — 上行接 ISP（只建接口，不获取 IP）
+sudo ip link add link enp0s31f6 name enp0s31f6.9 type vlan id 9
+sudo ip link set enp0s31f6.9 up
+
+# VLAN 10 — LAN 侧接交换机 trunk
+sudo ip link add link enp0s31f6 name enp0s31f6.10 type vlan id 10
+sudo ip addr add 192.168.10.2/24 dev enp0s31f6.10
+sudo ip link set enp0s31f6.10 up
+
+
+=================================================
+三、启用 IP 转发 + NAT
+=================================================
+
+# 内核转发
+sudo sysctl -w net.ipv4.ip_forward=1
+
+# 持久化：⚠️ Debian 13 的 systemd-sysctl 只读 /etc/sysctl.d/*.conf，不读 /etc/sysctl.conf
+# 必须写在 /etc/sysctl.d/ 下
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-ipforward.conf
+
+# NAT — 从 LAN 口进来的流量，出去时伪装成 WAN 口的 IP
+sudo iptables -t nat -A POSTROUTING -o enp0s31f6.9 -j MASQUERADE
+sudo iptables -A FORWARD -i enp0s31f6.10 -o enp0s31f6.9 -j ACCEPT
+sudo iptables -A FORWARD -i enp0s31f6.9 -o enp0s31f6.10 -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo netfilter-persistent save
+
+
+=================================================
+四、添加回程路由（让路由器知道其他 VLAN 走交换机）
+=================================================
+
+# 这些路由重启后会丢失，持久化见第六步
+sudo ip route add 192.168.11.0/24 via 192.168.10.1   # VLAN 11
+sudo ip route add 192.168.12.0/24 via 192.168.10.1   # VLAN 12
+sudo ip route add 192.168.13.0/24 via 192.168.10.1   # VLAN 13
+
+
+=================================================
+五、默认路由（default gateway）
+=================================================
+
+插到交换机后，在 enp0s31f6.9 上执行 dhclient 会自动从 ISP 获取
+默认路由，不需要手动配置。
+
+若 ISP 用静态 IP，则需手动添加：
+  sudo ip route add default via <ISP 网关> dev enp0s31f6.9
+
+
+=================================================
+六、持久化网络配置（/etc/network/interfaces）
+=================================================
+
+cat << 'EOF' | sudo tee -a /etc/network/interfaces
+
+# VLAN 9 — 上行接 ISP（DHCP 获取 IP 和默认路由）
+auto enp0s31f6.9
+iface enp0s31f6.9 inet dhcp
+    vlan-raw-device enp0s31f6
+
+# VLAN 10 — LAN 侧接交换机 trunk
+auto enp0s31f6.10
+iface enp0s31f6.10 inet static
+    address 192.168.10.2/24
+    vlan-raw-device enp0s31f6
+    # 回程路由（VLAN 11/12/13 经交换机 vlan.10 转发）
+    up ip route add 192.168.11.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.12.0/24 via 192.168.10.1 || true
+    up ip route add 192.168.13.0/24 via 192.168.10.1 || true
+EOF
+
+注：/etc/network/interfaces 中的 `up` 命令在接口激活时自动执行，
+    重启后路由自动恢复。`|| true` 防止路由已存在时报错中断启动。
+
+
+=================================================
+七、上线步骤（确认网线就绪后执行）
+=================================================
+
+1. 将 Debian 的网线从硬路由拔下，插入交换机 ge-0/0/0
+
+2. 获取 WAN 侧 IP：
+     sudo dhclient enp0s31f6.9
+
+3. 验证路由表：
+     ip route
+   - 应看到 default via <ISP 网关> dev enp0s31f6.9
+   - 应看到 192.168.11/12/13.0/24 via 192.168.10.1
+
+4. 验证连通性：
+     ping 192.168.10.1     # 通交换机 vlan.10
+     ping 192.168.12.1     # 通交换机 vlan.12
+     ping 8.8.8.8          # 通外网
+
+5. （可选）待全链路验证通顺后，从交换机删除临时 DHCP 池：
+
+     交换机上执行：
+     configure
+     delete system services dhcp pool 192.168.10.0/24
+     commit
+
+
+=================================================
+八、验证命令汇总
+=================================================
+
+ip addr show enp0s31f6.9         # VLAN 9 IP
+ip addr show enp0s31f6.10        # VLAN 10 — 192.168.10.2/24
+ip route                          # 路由表
+ping 192.168.10.1                 # 通交换机
+ping 192.168.12.1                 # 通 VLAN 12
+ping 8.8.8.8                      # 通外网
+sudo iptables -t nat -L -n       # NAT 规则

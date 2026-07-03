@@ -1,0 +1,75 @@
+=================================================
+路由修复方案
+=================================================
+
+问题：192.168.12.10 → ping 192.168.10.2 不通
+
+原因：
+  1. 交换机上有一条错误的静态路由（已在下文修复）
+  2. Debian 路由器未配置 eth0.10 子接口及 IP
+
+
+一、交换机侧修复
+------------------
+
+删除错误路由（vlan.10 自身已经是直连路由，不需要再配）：
+
+  configure
+  delete routing-options static route 192.168.10.0/24
+  commit
+
+验证路由表应如下：
+
+  > show route 192.168.10.0/24
+
+  期望输出直接显示 "vlan.10" 为出接口，不再有 Static 条目。
+
+
+二、路由器侧需要做的（Debian 13）
+-------------------------------
+
+在 Debian 路由器上执行：
+
+  1. 安装 vlan 工具：
+     apt install vlan
+
+  2. 加载 802.1Q 内核模块：
+     modprobe 8021q
+
+  3. 创建 VLAN 10 子接口：
+     ip link add link eth0 name eth0.10 type vlan id 10
+     ip addr add 192.168.10.2/24 dev eth0.10
+     ip link set eth0.10 up
+
+  4. 添加回程路由（让路由器知道 192.168.12.0/24 要从交换机走）：
+     ip route add 192.168.12.0/24 via 192.168.10.1
+
+  5. 如需持久化，写入 /etc/network/interfaces 或 netplan。
+
+
+三、验证
+--------
+
+在 192.168.12.10 上：
+
+  ping 192.168.10.2            # 应该通了
+
+在交换机上：
+
+  show arp                     # 应能看到 192.168.10.2 的 MAC
+  show log messages | match arp
+  ping 192.168.10.2            # 交换机自己也能 ping 通路由器
+
+
+四（可选）确认整个链路通顺后
+-------------------------------
+
+可删除交换机上的临时 DHCP 池，把 DHCP 迁移到路由器：
+
+  交换机：
+    delete system services dhcp pool 192.168.12.0/24
+    commit
+
+  路由器（添加 DHCP 服务 + 路由）：
+    apt install isc-dhcp-server
+    # 配置 /etc/dhcp/dhcpd.conf 增加 192.168.12.0/24 段

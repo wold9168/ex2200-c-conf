@@ -1,0 +1,210 @@
+=================================================
+IPv6 配置计划
+=================================================
+
+目前进度：路由器 VLAN 接口已建好，尚未插到交换机上线。
+本文档规划 IPv6 地址方案，待路由器上线获取前缀后执行。
+
+
+=================================================
+一、已知条件
+=================================================
+
+从路由器调试阶段的 IPv6 地址可见 ISP 分配了 240e 前缀
+（240e 属于中国电信 / China Telecom）。
+
+插到交换机后，路由器通过 DHCPv6-PD 从 ISP 获取一个委托前缀
+（通常 /56 或 /60，至少 /64），然后从中分出 /64 给每个 VLAN。
+
+
+=================================================
+二、推荐地址方案（使用  slaac  +  ULA ）
+=================================================
+
+由于 ISP 分配的 PD 前缀在实际上线后才能确定，
+建议同时配置 ULA（Unique Local Address，fd00::/8）作为固定地址，
+不依赖 ISP 前缀变化。
+
+| VLAN | 用途        | ULA IPv6 网段           | SLAAC 方式 |
+|------|-------------|-------------------------|------------|
+| 9    | 上行        | —（由 ISP 分配）        | DHCPv6-PD  |
+| 10   | 路由        | fd00:10::/64            | 路由器 radvd |
+| 11   | 管理        | fd00:11::/64            | 路由器 radvd |
+| 12   | 个人        | fd00:12::/64            | 路由器 radvd |
+| 13   | 虚拟机      | fd00:13::/64            | 路由器 radvd |
+
+ULA 地址仅供内网使用，不出公网路由。
+如需公网 IPv6 可达性，ISP PD 到位后加 GUA（Global Unicast Address）。
+
+
+=================================================
+三、路由器侧配置（插到交换机上线后执行）
+=================================================
+
+--------------------------------------------------
+3a. 安装 IPv6 所需软件
+--------------------------------------------------
+
+sudo apt install -y radvd wide-dhcpv6-client
+
+--------------------------------------------------
+3b. 配置 DHCPv6-PD 客户端（从 ISP 获取前缀）
+--------------------------------------------------
+
+cat << 'EOF' | sudo tee /etc/wide-dhcpv6-client/dhcp6c.conf
+
+interface enp0s31f6.9 {
+    send ia-pd 0;            # 请求前缀委派
+    request domain-name-servers;
+    request domain-name;
+};
+
+id-assoc pd 0 {
+    prefix-interface enp0s31f6.10 {
+        sla-id 1;            # 10 号子接口 → 第 1 个 /64
+        ifid 1;              # 接口 ID → ::1
+    };
+    prefix-interface enp0s31f6.12 {
+        sla-id 2;            # 12 号子接口 → 第 2 个 /64
+        ifid 1;
+    };
+};
+EOF
+
+sudo systemctl enable wide-dhcpv6-client
+
+--------------------------------------------------
+3c. 配置 radvd（Router Advertisement / SLAAC）
+--------------------------------------------------
+
+cat << 'EOF' | sudo tee /etc/radvd.conf
+
+# VLAN 10 — 路由子网
+interface enp0s31f6.10 {
+    AdvSendAdvert on;
+    prefix fd00:10::/64 {
+        AdvOnLink on;
+        AdvAutonomous on;    # SLAAC
+    };
+    RDNSS fd00:10::2 {};    # DNS 服务器
+};
+
+# VLAN 12 — 个人设备
+interface enp0s31f6.12 {
+    AdvSendAdvert on;
+    prefix fd00:12::/64 {
+        AdvOnLink on;
+        AdvAutonomous on;
+    };
+    RDNSS fd00:12::2 {};
+};
+EOF
+
+--------------------------------------------------
+3d. 添加 IPv6 地址到 VLAN 子接口
+--------------------------------------------------
+
+# ULA 地址（内网固定）
+sudo ip -6 addr add fd00:10::2/64 dev enp0s31f6.10
+sudo ip -6 addr add fd00:12::2/64 dev enp0s31f6.12
+
+#（等 PD 到位后，wide-dhcpv6-client 会自动添加 GUA 地址）
+
+--------------------------------------------------
+3e. 持久化 IPv6 配置到 /etc/network/interfaces
+--------------------------------------------------
+
+追加到现有的 enp0s31f6.10 和 enp0s31f6.12 配置段：
+
+# VLAN 10 — 追加到已有 stanza
+iface enp0s31f6.10 inet6 static
+    address fd00:10::2/64
+    # DHCPv6-PD 获取的 GUA 地址由 wide-dhcpv6-client 自动添加
+    up ip -6 route add fd00:11::/64 via fd00:10::1 || true
+    up ip -6 route add fd00:13::/64 via fd00:10::1 || true
+
+# VLAN 12 — 追加
+iface enp0s31f6.12 inet6 static
+    address fd00:12::2/64
+
+
+=================================================
+四、交换机侧配置
+=================================================
+
+交换机需要启用 IPv6 并添加 ULA 地址到各 VLAN 接口。
+
+--------------------------------------------------
+4a. 启用 IPv6 转发
+--------------------------------------------------
+
+configure
+set chassis fpc 0 pic 0 tunnel-services
+set system internet-options ipv6-path-mtu-discovery
+commit
+
+--------------------------------------------------
+4b. 添加 IPv6 地址到 VLAN 接口
+--------------------------------------------------
+
+configure
+
+# vlan.10（路由 VLAN）— 网关，下一跳指向路由器
+set interfaces vlan unit 10 family inet6 address fd00:10::1/64
+
+# vlan.11（管理 VLAN）
+set interfaces vlan unit 11 family inet6 address fd00:11::1/64
+
+# vlan.12（个人设备 VLAN）
+set interfaces vlan unit 12 family inet6 address fd00:12::1/64
+
+# vlan.13（虚拟机 VLAN）
+set interfaces vlan unit 13 family inet6 address fd00:13::1/64
+
+commit
+
+--------------------------------------------------
+4c. 添加 IPv6 默认路由（指向路由器）
+--------------------------------------------------
+
+set routing-options rib inet6.0 static route ::/0 next-hop fd00:10::2
+commit
+
+--------------------------------------------------
+4d. me0 管理口 IPv6
+--------------------------------------------------
+
+set interfaces me0 unit 0 family inet6 address fd00:11::2/64
+commit
+
+
+=================================================
+五、验证命令
+=================================================
+
+# 路由器
+ip -6 addr show                           # IPv6 地址
+ip -6 route show                          # IPv6 路由表
+sudo radvdump                             # RA 报文
+sudo dhclient -6 -P enp0s31f6.9          # PD 调试
+
+# 交换机
+show interfaces vlan.10 terse             # 确认 inet6 地址
+show ipv6 route                           # IPv6 路由表
+ping inet6 fd00:10::2                     # 通路由器
+
+# 笔记本
+ip -6 addr show                           # 应有无状态 IPv6 地址
+ping6 fd00:12::1                          # 通交换机
+ping6 fd00:10::2                          # 通路由器
+ping6 240e::xxxx                          # 通外网 IPv6
+
+
+=================================================
+六、执行前提
+=================================================
+
+1. 路由器已上线（网线插到交换机，dhclient enp0s31f6.9 完成）
+2. ISP 分配了 IPv6 PD 前缀（或确认 ULA 方式足够当前需求）
+3. 本方案采用 ULA + SLAAC，不依赖 ISP 前缀变化
+4. 若 ISP 提供固定 PD 前缀，可将 GUA 地址补充到交换机配置中

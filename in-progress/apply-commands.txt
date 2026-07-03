@@ -1,0 +1,123 @@
+===================================================
+EX2200-C 配置指令集
+配套 configured.conf 使用
+===================================================
+
+将以下指令按顺序一段段复制进 J-Web CLI 工具或 SSH 终端执行。
+每段结尾带 commit，确保每步生效。
+
+
+===== 第 1 步：创建 VLAN 与 IRB 接口 =====
+
+configure                                # 进入配置模式
+set vlans upstream vlan-id 9             # 创建上游 VLAN 9
+set vlans routing vlan-id 10             # 创建路由 VLAN 10
+set vlans management vlan-id 11          # 创建管理 VLAN 11
+set vlans personal vlan-id 12            # 创建个人设备 VLAN 12
+set vlans vm vlan-id 13                  # 创建虚拟机 VLAN 13
+set interfaces vlan unit 10 family inet address 192.168.10.1/24   # VLAN 10 网关
+set interfaces vlan unit 11 family inet address 192.168.11.1/24   # VLAN 11 网关
+set interfaces vlan unit 12 family inet address 192.168.12.1/24   # VLAN 12 网关
+set interfaces vlan unit 13 family inet address 192.168.13.1/24   # VLAN 13 网关
+set vlans routing l3-interface vlan.10     # 绑定 VLAN 10 到 IRB
+set vlans management l3-interface vlan.11  # 绑定 VLAN 11 到 IRB
+set vlans personal l3-interface vlan.12   # 绑定 VLAN 12 到 IRB
+set vlans vm l3-interface vlan.13         # 绑定 VLAN 13 到 IRB
+commit                                   # 提交生效
+
+
+===== 第 2 步：配置上行端口（ge-0/1/0、ge-0/1/1）=====
+
+configure                                                     # 进入配置模式
+set interfaces ge-0/1/0 unit 0 family ethernet-switching     # 设为二层交换模式
+  port-mode access                                            # 接入模式
+set interfaces ge-0/1/0 unit 0 family ethernet-switching     # 加入上游 VLAN
+  vlan members upstream
+set interfaces ge-0/1/1 unit 0 family ethernet-switching     # 同上，备用口
+  port-mode access
+set interfaces ge-0/1/1 unit 0 family ethernet-switching     # 同上
+  vlan members upstream
+commit                                                       # 提交生效
+
+
+===== 第 3 步：配置路由器互联口（ge-0/0/0）=====
+
+# ⚠ 先删旧的三层 IP（192.168.1.1/24），再改成二层 trunk
+configure
+delete interfaces ge-0/0/0 unit 0 family inet                      # 删除旧三层配置
+set interfaces ge-0/0/0 unit 0 family ethernet-switching           # 设为二层交换模式
+  port-mode trunk                                                  # 干线模式，可传多个 VLAN
+set interfaces ge-0/0/0 unit 0 family ethernet-switching           # trunk 允许的 VLAN
+  vlan members [ upstream routing ]                                 # VLAN 9（上游）和 10（路由）
+commit
+
+
+===== 第 4 步：配置个人设备口（ge-0/0/1 ~ 11）=====
+
+configure                                                           # 进入配置模式
+set interfaces interface-range PERSONAL                             # 定义端口组 "PERSONAL"
+  member-range ge-0/0/1 to ge-0/0/11                                 # 范围：端口 1 到 11
+set interfaces interface-range PERSONAL unit 0                      # 端口组设为二层接入模式
+  family ethernet-switching port-mode access
+set interfaces interface-range PERSONAL unit 0                      # 端口组加入 VLAN 12
+  family ethernet-switching vlan members personal
+commit                                                              # 提交生效
+
+
+===== 第 5 步：迁移管理口（me0）到 VLAN 11 子网 =====
+
+# ⚠ 提交后 web 会话会断开
+# 电脑需配 192.168.11.x/24 的静态 IP，重新打开 http://192.168.11.2
+configure
+set interfaces me0 unit 0 family inet address 192.168.11.2/24      # 管理口新 IP 改到 VLAN 11 子网
+delete interfaces me0 unit 0 family inet address 192.168.2.1/24    # 删除旧 IP
+commit
+
+
+===== 第 6 步：替换 DHCP 池（删除旧池、创建新池）=====
+
+configure
+delete system services dhcp pool 192.168.1.0/24                    # 删除废弃的旧 DHCP 池
+delete system services dhcp pool 192.168.2.0/24                    # 删除废弃的旧 DHCP 池
+set system services dhcp pool 192.168.10.0/24                      # VLAN 10 DHCP 池
+  address-range low 192.168.10.10 high 192.168.10.253               # 分配范围 .10 ~ .253
+set system services dhcp pool 192.168.10.0/24                      # VLAN 10 设备默认网关
+  router 192.168.10.2                                               # → Debian 路由器
+set system services dhcp pool 192.168.11.0/24                      # VLAN 11 DHCP 池
+  address-range low 192.168.11.10 high 192.168.11.253
+set system services dhcp pool 192.168.11.0/24                      # VLAN 11 网关
+  router 192.168.11.1                                               # → IRB.11（交换机自己）
+set system services dhcp pool 192.168.12.0/24                      # VLAN 12 DHCP 池
+  address-range low 192.168.12.10 high 192.168.12.253
+set system services dhcp pool 192.168.12.0/24                      # VLAN 12 网关
+  router 192.168.12.1                                               # → IRB.12（交换机自己）
+commit
+
+
+===== 第 7 步：添加默认路由 =====
+
+configure
+set routing-options static route 0/0 next-hop 192.168.10.2          # 所有外网流量→Debian 路由器
+commit
+
+
+===== 第 8 步：补充协议配置（RSTP/LLDP/IGMP snooping/风暴控制）=====
+
+configure
+set protocols igmp-snooping vlan all      # 组播侦听：优化 IPTV/流媒体，不让组播灌满所有端口
+set protocols rstp                        # 快速生成树：防止环路引起广播风暴
+set protocols lldp interface all          # 链路层发现协议：自动识别邻居设备型号
+set protocols lldp-med interface all      # LLDP-MED：VoIP 电话专用扩展
+set ethernet-switching-options            # 风暴控制
+  storm-control interface all             #   限制未知广播/组播/单播，保护 CPU
+commit
+
+
+===== 附录：验证命令 =====
+
+show vlans                                # 查看所有 VLAN 和成员端口
+show interfaces terse                     # 接口状态一览（up/down、IP）
+show interfaces vlan                       # IRB 虚拟接口状态
+show configuration | display set          # 以 set 格式显示当前配置
+show ethernet-switching table             # MAC 地址表
+show log messages | match "dhcpd"         # 查看 DHCP 分配日志
