@@ -86,6 +86,8 @@ auto enp0s31f6.9
 iface enp0s31f6.9 inet dhcp
     vlan-raw-device enp0s31f6
 
+iface enp0s31f6.9 inet6 auto
+
 # VLAN 10 — LAN 侧接交换机 trunk
 auto enp0s31f6.10
 iface enp0s31f6.10 inet static
